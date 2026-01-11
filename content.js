@@ -35,3 +35,18 @@ observer.observe(document.body, {
   childList: true,
   subtree: true
 });
+
+// Bilibili Detection
+if (location.hostname.includes('bilibili.com')) {
+    window.addEventListener('message', (event) => {
+        if (event.source !== window) return;
+        if (event.data.type === 'BILIBILI_DETECTED') {
+            chrome.runtime.sendMessage({
+                action: 'checkBilibili',
+                bvid: event.data.bvid,
+                cid: event.data.cid,
+                title: event.data.title
+            });
+        }
+    });
+}

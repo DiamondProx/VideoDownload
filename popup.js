@@ -20,7 +20,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     li.className = 'video-item';
 
     const isM3U8 = video.url.includes('.m3u8') || video.type.includes('mpegurl');
-    const typeLabel = isM3U8 ? '<span class="tag-m3u8">M3U8</span>' : '<span class="tag-mp4">MP4</span>';
+    let typeLabel = isM3U8 ? '<span class="tag-m3u8">M3U8</span>' : '<span class="tag-mp4">MP4</span>';
+    
+    if (video.filename.includes('bilibili')) {
+         typeLabel = '<span class="tag-mp4" style="background-color: #FB7299;">Bilibili</span>';
+    } else if (video.type.includes('flv')) {
+         typeLabel = '<span class="tag-mp4">FLV</span>';
+    }
 
     li.innerHTML = `
       <div class="video-info">

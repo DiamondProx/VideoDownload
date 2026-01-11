@@ -5,6 +5,7 @@
   "description": "Download videos (MP4, M3U8, etc.) from any website.",
   "permissions": [
     "webRequest",
+    "declarativeNetRequest",
     "storage",
     "tabs",
     "downloads"
@@ -20,6 +21,12 @@
       "matches": ["<all_urls>"],
       "js": ["content.js"],
       "run_at": "document_end"
+    },
+    {
+      "matches": ["*://*.bilibili.com/*"],
+      "js": ["bilibili_inject.js"],
+      "run_at": "document_end",
+      "world": "MAIN"
     }
   ],
   "action": {

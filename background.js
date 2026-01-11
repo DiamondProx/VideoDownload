@@ -15,6 +15,28 @@ const MEDIA_TYPES = [
 
 const EXTENSIONS = ['.mp4', '.m3u8', '.webm', '.ogg', '.mp3', '.wav', '.flv', '.mov'];
 
+// Bilibili Referer Rule
+const BILIBILI_RULE_ID = 1;
+chrome.declarativeNetRequest.updateDynamicRules({
+  removeRuleIds: [BILIBILI_RULE_ID],
+  addRules: [
+    {
+      id: BILIBILI_RULE_ID,
+      priority: 1,
+      action: {
+        type: "modifyHeaders",
+        requestHeaders: [
+          { header: "Referer", operation: "set", value: "https://www.bilibili.com/" },
+          { header: "Origin", operation: "remove" }
+        ]
+      },
+      condition: {
+        requestDomains: ["bilivideo.com", "bilivideo.cn", "hdslb.com"]
+      }
+    }
+  ]
+});
+
 chrome.webRequest.onHeadersReceived.addListener(
   (details) => {
     if (details.tabId === -1) return;
@@ -50,6 +72,8 @@ chrome.webRequest.onHeadersReceived.addListener(
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'foundVideo' && sender.tab) {
     addVideo(sender.tab.id, message.url, 'video/dom', 0);
+  } else if (message.action === 'checkBilibili' && sender.tab) {
+    fetchBilibiliVideo(sender.tab.id, message.bvid, message.cid, message.title);
   }
 });
 
@@ -66,7 +90,44 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   chrome.storage.local.remove(tabId.toString());
 });
 
-async function addVideo(tabId, url, type, size) {
+async function fetchBilibiliVideo(tabId, bvid, cid, title) {
+  try {
+    // fnval=1 requests MP4/FLV (durl)
+    const apiUrl = `https://api.bilibili.com/x/player/playurl?bvid=${bvid}&cid=${cid}&qn=64&fnval=1&fnver=0&fourk=1&platform=html5&high_quality=1`;
+    const res = await fetch(apiUrl);
+    const json = await res.json();
+    
+    let baseFilename = `bilibili_${bvid}`;
+    if (title) {
+        baseFilename = title.replace(/[\\/:*?"<>|]/g, '_');
+    }
+
+    if (json.code === 0 && json.data) {
+        let added = false;
+        // Check for durl (MP4/FLV)
+        if (json.data.durl && json.data.durl.length > 0) {
+            const video = json.data.durl[0];
+            await addVideo(tabId, video.url, 'video/mp4', video.size, `${baseFilename}.mp4`);
+            added = true;
+        } 
+        
+        // If no durl, check dash (fallback)
+        if (!added && json.data.dash) {
+             const videoTrack = json.data.dash.video[0];
+             const audioTrack = json.data.dash.audio ? json.data.dash.audio[0] : null;
+             
+             await addVideo(tabId, videoTrack.baseUrl, 'video/mp4', 0, `${baseFilename}_video.mp4`);
+             if (audioTrack) {
+                 await addVideo(tabId, audioTrack.baseUrl, 'audio/mp4', 0, `${baseFilename}_audio.mp4`);
+             }
+        }
+    }
+  } catch (e) {
+      console.error('Bilibili fetch failed', e);
+  }
+}
+
+async function addVideo(tabId, url, type, size, customFilename = null) {
   const key = tabId.toString();
   
   // Use local storage to persist somewhat longer or session if available
@@ -77,20 +138,22 @@ async function addVideo(tabId, url, type, size) {
   // Avoid duplicates
   if (!videos.some(v => v.url === url)) {
     // Try to guess filename from URL
-    let filename = 'video';
-    try {
-      const urlObj = new URL(url);
-      const path = urlObj.pathname;
-      const parts = path.split('/');
-      const last = parts[parts.length - 1];
-      if (last && last.includes('.')) {
-        filename = last;
-      } else {
-        filename = `video_${Date.now()}`;
-        if (type.includes('mp4')) filename += '.mp4';
-        else if (type.includes('mpegurl')) filename += '.m3u8';
-      }
-    } catch (e) {}
+    let filename = customFilename || 'video';
+    if (!customFilename) {
+        try {
+          const urlObj = new URL(url);
+          const path = urlObj.pathname;
+          const parts = path.split('/');
+          const last = parts[parts.length - 1];
+          if (last && last.includes('.')) {
+            filename = last;
+          } else {
+            filename = `video_${Date.now()}`;
+            if (type.includes('mp4')) filename += '.mp4';
+            else if (type.includes('mpegurl')) filename += '.m3u8';
+          }
+        } catch (e) {}
+    }
 
     videos.push({
       url,
